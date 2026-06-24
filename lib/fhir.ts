@@ -72,13 +72,16 @@ interface Bundle<T> {
 }
 
 export function baseUrl(): string {
-  const raw = process.env.FHIR_BASE_URL || "https://cdr.pheref.fhirlab.net/fhir";
+  // NEXT_PUBLIC_ is required so the value is available in the browser,
+  // since the dashboard now fetches FHIR directly from the client.
+  const raw =
+    process.env.NEXT_PUBLIC_FHIR_BASE_URL || "https://cdr.pheref.fhirlab.net/fhir";
   return raw.replace(/\/+$/, "");
 }
 
 /**
  * Fetch every resource of a type, following Bundle `next` links.
- * Runs server-side (Node/Vercel) where there are no CORS or allowlist limits.
+ * Runs in the browser (client-side); the FHIR server must allow CORS.
  */
 export async function fetchAll<T>(
   type: string,

@@ -17,6 +17,7 @@
 
 import {
   fetchAll,
+  baseUrl,
   Organization,
   PractitionerRole,
   ServiceRequest,
@@ -260,8 +261,8 @@ export async function getDashboardData(): Promise<DashboardData> {
   const pct = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
 
   // ----- reporting year ------------------------------------------------------
-  const reportingYear = process.env.REPORTING_YEAR
-    ? Number(process.env.REPORTING_YEAR)
+  const reportingYear = process.env.NEXT_PUBLIC_REPORTING_YEAR
+    ? Number(process.env.NEXT_PUBLIC_REPORTING_YEAR)
     : Number(
         Object.entries(yearVotes).sort((x, y) => y[1] - x[1])[0]?.[0] ||
           new Date().getFullYear(),
@@ -309,7 +310,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   tuples.forEach((t) => {
     if (t.a && t.b) {
-      const k = `${t.a}${t.b}`;
+      const k = `${t.a}\u0001${t.b}`;
       edgeMap.set(k, (edgeMap.get(k) || 0) + 1);
     }
     if (t.a) {
@@ -326,7 +327,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const edges: EdgeRow[] = Array.from(edgeMap.entries())
     .map(([k, value]) => {
-      const [from, to] = k.split("");
+      const [from, to] = k.split("\u0001");
       return { from, to, value, label: `${orgName(from)} → ${orgName(to)}` };
     })
     .sort((x, y) => y.value - x.value);
@@ -433,7 +434,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   return {
     generatedAt: new Date().toISOString(),
-    fhirBase: (process.env.FHIR_BASE_URL || "https://cdr.pheref.fhirlab.net/fhir").replace(/\/+$/, ""),
+    fhirBase: baseUrl(),
     reportingYear,
     totals: {
       coordinated,
