@@ -10,7 +10,7 @@ export default function RefreshButton({
   return (
     <button
       type="button"
-      className="refresh-btn"
+      className="btn"
       onClick={onClick}
       disabled={busy}
       aria-label="Refresh data"
