@@ -72,7 +72,7 @@ interface Bundle<T> {
 }
 
 export function baseUrl(): string {
-  const raw = process.env.FHIR_BASE_URL || "https://cdr.fhirlab.net/fhir";
+  const raw = process.env.FHIR_BASE_URL || "https://cdr.pheref.fhirlab.net/fhir";
   return raw.replace(/\/+$/, "");
 }
 

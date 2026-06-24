@@ -433,7 +433,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   return {
     generatedAt: new Date().toISOString(),
-    fhirBase: (process.env.FHIR_BASE_URL || "https://cdr.fhirlab.net/fhir").replace(/\/+$/, ""),
+    fhirBase: (process.env.FHIR_BASE_URL || "https://cdr.pheref.fhirlab.net/fhir").replace(/\/+$/, ""),
     reportingYear,
     totals: {
       coordinated,
