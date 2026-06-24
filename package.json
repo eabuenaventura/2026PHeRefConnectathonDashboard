@@ -1,0 +1,24 @@
+{
+  "name": "pheref-referral-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aklan Referral Monitoring Dashboard — PHeRef Connectathon. Indicators per Aklan_Referral_Dashboard_Documentation.tex, sourced live from a FHIR R4 server.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "recharts": "2.12.7"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "typescript": "5.5.3"
+  }
+}

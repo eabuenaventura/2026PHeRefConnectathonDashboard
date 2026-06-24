@@ -1,0 +1,265 @@
+\documentclass[11pt]{article}
+
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage[table]{xcolor}
+\usepackage{enumitem}
+\usepackage{sectsty}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{navy}{HTML}{1F3B5B}
+\definecolor{accent}{HTML}{185FA5}
+\definecolor{flagred}{HTML}{C0392B}
+\definecolor{redbg}{HTML}{FBE3E0}
+\definecolor{vscol}{HTML}{3A5573}
+\definecolor{headbg}{HTML}{1F3B5B}
+
+\allsectionsfont{\color{navy}}
+\renewcommand{\arraystretch}{1.25}
+\setlist{nosep,leftmargin=1.4em}
+
+% Notation shortcuts
+\newcommand{\Coord}{\mathrm{Coord}}
+\newcommand{\Succ}{\mathrm{Succ}}
+\newcommand{\Unsucc}{\mathrm{Unsucc}}
+\newcommand{\Encoded}{\mathrm{Encoded}}
+\newcommand{\key}{\operatorname{key}}
+\newcommand{\name}{\operatorname{name}}
+\newcommand{\fhir}[1]{\texttt{#1}}
+
+\title{\textbf{\color{navy}Aklan Referral Monitoring Dashboard}\\[2pt]
+\large Data Documentation, Operational Definitions \& FHIR (R4) Mapping}
+\author{Provincial Health Office \quad\textbullet\quad CY 2025}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-1.5em}
+
+\noindent This document specifies the data behind every panel of the Aklan referral monitoring dashboard: the operational definition of each variable, the equation for each figure (in standard math notation), and the FHIR R4 element that supplies each variable, drawn from the \emph{[FINAL] FHIR Element (R4)} column of the TDG Synchronous Referral mapping (v0.1). It is written to be actionable by an automated agent building the dashboard directly from FHIR resources.
+
+\section{Data sources}
+Referral reporting arrives in two parallel streams, both organised by institution:
+\begin{itemize}
+  \item \textbf{ICT / EMR stream} --- electronic, consolidated quarterly with an annual roll-up. Source of all referral counts and successful/unsuccessful figures. In FHIR terms, each referral is a \fhir{ServiceRequest} with a linked \fhir{Task} that records its outcome.
+  \item \textbf{HFDU manual stream} --- manual, reported monthly. Source of leading causes, declined-referral reasons, and patient satisfaction. The Monitoring tab records which institutions submitted.
+\end{itemize}
+
+\section{Dashboard layout \& panels}\label{sec:panels}
+The dashboard is a single-screen operational view that mirrors the approved mock-ups: a light canvas of rounded white cards, each with a hairline border and a short bold navy title, laid out in five rows. The expected panels, their titles, and their feeding metric are listed below; the metric column points to the equation in Sec.~\ref{sec:metrics}.
+
+\begingroup
+\footnotesize
+\setlength{\tabcolsep}{5pt}
+\begin{longtable}{>{\raggedright\arraybackslash}p{4.3cm} >{\raggedright\arraybackslash}p{6.4cm} >{\raggedright\arraybackslash}p{3.2cm}}
+\rowcolor{headbg}
+\textbf{\color{white}Panel title (as shown)} & \textbf{\color{white}How it should look} & \textbf{\color{white}Feeds}\\
+\endhead
+\textbf{Coordinated Referrals} & KPI card: large bold number over a small caption. & \S\ref{sec:general}, eq.~\eqref{eq:coord}\\
+\textbf{Successful referral rate} & KPI card: large percent. & \S\ref{sec:general}, eq.~\eqref{eq:succ}\\
+\textbf{Declined referral rate} & KPI card: large percent. & \S\ref{sec:general}, eq.~\eqref{eq:decl}\\
+\textbf{Report Submission Rate (average)} & KPI card: large percent. & \S\ref{sec:general}, eq.~\eqref{eq:sub}\\
+\textbf{Coordinated referrals by quarter} & Vertical bar chart, blue bars, x-axis Q1--Q4 (a partial final quarter is marked Q4$^{*}$). & \S\ref{sec:quarter}, eq.~\eqref{eq:quarter}\\
+\textbf{Leading causes of referral} & Horizontal bar chart, teal/green bars, top 5 causes ranked, each labelled by its SNOMED \emph{Display}. & \S\ref{sec:causes}, eq.~\eqref{eq:cases}\\
+\textbf{Referral directionality} \emph{(coordinated, YTD)} & Full-width list of horizontal bars, one per directed pair, labelled $\name(a)\!\to\!\name(b)$ with the count at the right, ranked descending. \emph{This is the panel shown as ``Referral pathways'' in the mock-ups; the rows are now specific directed institution pairs.} & \S\ref{sec:edges}, eq.~\eqref{eq:edge}\\
+\textbf{Outgoing referrals} & Horizontal bar chart, one bar per institution $\name(o)$ ranked descending, valued by referrals \emph{sent}; may be split by outcome. & \S\ref{sec:outgoing}, eq.~\eqref{eq:out}\\
+\textbf{Incoming referrals} & Horizontal bar chart, one bar per institution $\name(o)$ ranked descending, valued by referrals \emph{received}. & \S\ref{sec:incoming}, eq.~\eqref{eq:in}\\
+\textbf{Top referring facilities} & Horizontal bar chart ranked descending, labelled $\name(a)$; a two-swatch legend distinguishes Hospital (blue) from PCF (teal). (Ranked view of Outgoing referrals.) & \S\ref{sec:topref}, eq.~\eqref{eq:topref}\\
+\textbf{Top reasons for declined / unsuccessful} & Horizontal bar chart, red bars, ranked descending. Until \texttt{Task.statusReason} exists (Sec.~\ref{sec:fhir}), render a single ``Declined (total)'' bar. & \S\ref{sec:declined}, eq.~\eqref{eq:count}\\
+\textbf{Report submission status --- hospitals (by month-end)} & Full-width facility\,$\times$\,month matrix: rows are hospitals (display $\name(o)$), columns are the 12 months dated to month-end (Jan~31 \ldots Dec~31), each cell a rounded square coloured green / amber / red. A facility key beneath maps each abbreviation to its full \texttt{Organization.name}. & \S\ref{sec:submission}, eqs.~\eqref{eq:cell}--\eqref{eq:ratem}\\
+\end{longtable}
+\endgroup
+
+\paragraph{Row order (top to bottom).}
+\begin{enumerate}
+  \item Four KPI cards across the top, equal width.
+  \item Two side-by-side cards: \emph{Coordinated referrals by quarter} (left) and \emph{Leading causes of referral} (right).
+  \item One full-width card: \emph{Referral directionality}.
+  \item Two side-by-side cards: \emph{Outgoing referrals} (left) and \emph{Incoming referrals} (right).
+  \item Two side-by-side cards: \emph{Top referring facilities} (left) and \emph{Top reasons for declined / unsuccessful} (right).
+  \item One full-width card: \emph{Report submission status --- hospitals (by month-end)} with its facility key.
+\end{enumerate}
+
+\paragraph{Visual conventions (to match the mock-ups).} Card titles in navy (\texttt{\#1F3B5B}); KPI figures large and bold. Bar colours: quarterly bars blue (\texttt{\#378ADD}); leading causes teal (\texttt{\#1D9E75}); top-referring bars Hospital blue (\texttt{\#185FA5}) / PCF teal (\texttt{\#1D9E75}); declined bars red (\texttt{\#E24B4A}). Submission-matrix cells use a traffic-light scale --- Encoded green (\texttt{\#1D9E75}), Not complete amber (\texttt{\#EF9F27}), No red (\texttt{\#E24B4A}). Hovering a matrix cell or facility label reveals the full \texttt{Organization.name} and the month-end date.
+
+\section{Operational definitions (general)}
+These definitions apply to the whole document. Every grouping or join uses the \textbf{NHFR key}; every label shown in the UI uses the \textbf{display name}.
+
+\begin{itemize}
+  \item \textbf{Organization (institution) $o$.} A healthcare facility participating in referrals (the 8 hospitals, 19 PCFs, and the apex hospital WVMC).
+  \begin{itemize}
+    \item \textbf{Variable reference (key):} $\key(o) = \fhir{Organization.identifier(NHFR).value}$ --- the National Health Facility Registry id. Use this as the identity for all counting, grouping and joins.
+    \item \textbf{Display label:} $\name(o) = \fhir{Organization.name}$ --- shown in the UI (e.g.\ ``MMH'', ``Malay Municipal Hospital'').
+  \end{itemize}
+  \item \textbf{Sending institution $a$} (initiating / referring). Source: \fhir{ServiceRequest.requester} resolved to its \fhir{Organization}.
+  \item \textbf{Receiving institution $b$} (destination). Source: the receiving \fhir{Organization} (the request's performer / \fhir{Task.owner}).
+  \item \textbf{Directed interaction $a\!\to\! b$.} An \emph{ordered} pair of institutions. Direction is significant: $a\!\to\! b \neq b\!\to\! a$. It is identified by $\bigl(\key(a),\key(b)\bigr)$ and displayed as $\name(a)\!\to\!\name(b)$, e.g.\ \textbf{MMH $\to$ CSTH}. This replaces the old facility-class ``referral category'' (PCF$\to$PCF, etc.): counts are now per specific institution pair.
+  \item \textbf{Month $m$.} The calendar month of \fhir{ServiceRequest.authoredOn}. $M$ is the set of reporting months; quarters group them (Sec.~\ref{sec:quarter}).
+  \item \textbf{Coordinated referral.} One \fhir{ServiceRequest} arranged with, and accepted by, the receiving institution through the EMR before transfer.
+  \item \textbf{Outcome.} Carried on the linked \fhir{Task}: \fhir{Task.status} $=$ \emph{Received} (success) or \emph{Referred/Forwarded} (declined / forwarded onward).
+\end{itemize}
+
+\noindent\textbf{Core measured functions} (all keyed on NHFR ids):
+\begin{align*}
+\Coord(a,b,m)  &= \text{\# coordinated \fhir{ServiceRequest} with requester }a,\ \text{receiver }b,\ \text{month}(\fhir{authoredOn})=m,\\
+\Succ(a,b,m)   &= \text{subset of }\Coord(a,b,m)\text{ with }\fhir{Task.status}=\text{Received},\\
+\Unsucc(a,b,m) &= \text{subset of }\Coord(a,b,m)\text{ with }\fhir{Task.status}=\text{Referred/Forwarded}.
+\end{align*}
+By construction $\Coord(a,b,m) = \Succ(a,b,m) + \Unsucc(a,b,m)$.
+
+\section{Metric equations and per-section definitions}\label{sec:metrics}
+Each subsection states the variables it uses, then the equation(s). Sums over $a$ and $b$ range over all institutions with $a\neq b$.
+
+\subsection{General stats (KPI cards)}\label{sec:general}
+\textit{Variables:} $\Coord,\Succ,\Unsucc$ as above; $H$ = set of hospitals; $M$ = set of months; $\Encoded(o,m)\in\{\text{Yes},\text{Not complete},\text{No}\}$ is the report-submission status (reporting metadata, Sec.~\ref{sec:fhir}).
+\begin{align}
+\text{Coordinated referrals} &= \sum_{a}\sum_{b}\sum_{m} \Coord(a,b,m) \label{eq:coord}\\[2pt]
+\text{Successful referral rate} &= \frac{\displaystyle\sum_{a,b,m}\Succ(a,b,m)}{\displaystyle\sum_{a,b,m}\Coord(a,b,m)}\times 100 \label{eq:succ}\\[2pt]
+\text{Declined referral rate} &= \frac{\displaystyle\sum_{a,b,m}\Unsucc(a,b,m)}{\displaystyle\sum_{a,b,m}\Coord(a,b,m)}\times 100 \label{eq:decl}\\[2pt]
+\text{Report submission rate} &= \frac{1}{|M|}\sum_{m\in M}\frac{\bigl|\{\,o\in H : \Encoded(o,m)=\text{Yes}\,\}\bigr|}{|H|}\times 100 \label{eq:sub}
+\end{align}
+
+\subsection{Coordinated referrals by quarter}\label{sec:quarter}
+\textit{Variables:} $\Coord$; quarter month-sets $Q_1=\{\text{Jan,Feb,Mar}\}$, $Q_2=\{\text{Apr,May,Jun}\}$, $Q_3=\{\text{Jul,Aug,Sep}\}$, $Q_4=\{\text{Oct,Nov,Dec}\}$.
+\begin{equation}
+Q_k = \sum_{a}\sum_{b}\ \sum_{m\in Q_k} \Coord(a,b,m) \label{eq:quarter}
+\end{equation}
+
+\subsection{Referral directionality}\label{sec:edges}
+\textit{Replaces the former ``referral pathways'' panel.} \textit{Variables:} the directed interaction $a\!\to\! b$; identity $\bigl(\key(a),\key(b)\bigr)$; display $\name(a)\!\to\!\name(b)$.
+
+For each ordered institution pair, count referrals in that specific direction:
+\begin{equation}
+\mathrm{Edge}(a\!\to\! b) = \sum_{m} \Coord(a,b,m) \label{eq:edge}
+\end{equation}
+Render one bar/row per pair with a non-zero count, labelled $\name(a)\!\to\!\name(b)$ and valued $\mathrm{Edge}(a\!\to\! b)$. \emph{Example:} $\mathrm{Edge}(\text{MMH}\!\to\!\text{CSTH})$ is the number of coordinated referrals sent from the institution whose \fhir{Organization.name} is ``MMH'' (key $=$ its NHFR id) to the institution ``CSTH'' (key $=$ its NHFR id). Because direction matters, MMH\,$\to$\,CSTH and CSTH\,$\to$\,MMH are separate rows.
+
+\subsection{Outgoing referrals}\label{sec:outgoing}
+\textit{Variables:} institution $o$ in its role as \emph{sender}; key $\key(o)=\fhir{Organization.identifier(NHFR).value}$, display $\name(o)$. \textit{FHIR:} group referrals by the requesting \fhir{Organization} (\fhir{ServiceRequest.requester}, REF-5/REF-6).
+
+Outgoing volume is the row-sum of the directionality matrix --- all referrals \emph{sent by} $o$, across every destination and month:
+\begin{equation}
+\mathrm{Out}(o) = \sum_{b}\sum_{m} \Coord(o,b,m) \label{eq:out}
+\end{equation}
+Render one bar per institution, labelled $\name(o)$, valued $\mathrm{Out}(o)$. Optionally split each bar by outcome using $\Succ$ / $\Unsucc$. Note $\sum_{o}\mathrm{Out}(o)$ equals the total coordinated referrals (eq.~\ref{eq:coord}).
+
+\subsection{Incoming referrals}\label{sec:incoming}
+\textit{Variables:} institution $o$ in its role as \emph{receiver}; key $\key(o)=\fhir{Organization.identifier(NHFR).value}$, display $\name(o)$. \textit{FHIR:} group referrals by the receiving \fhir{Organization} (\fhir{Task.owner} / the request's performer, REF-10/REF-11).
+
+Incoming volume is the column-sum of the directionality matrix --- all referrals \emph{received by} $o$, across every origin and month:
+\begin{equation}
+\mathrm{In}(o) = \sum_{a}\sum_{m} \Coord(a,o,m) \label{eq:in}
+\end{equation}
+Render one bar per institution, labelled $\name(o)$, valued $\mathrm{In}(o)$. By construction $\sum_{o}\mathrm{In}(o) = \sum_{o}\mathrm{Out}(o) = $ total coordinated referrals, and $\mathrm{Out}$ and $\mathrm{In}$ are the two marginals of the same directed matrix $\mathrm{Edge}(a\!\to\! b)$.
+
+\subsection{Top referring facilities}\label{sec:topref}
+\textit{Variables:} sending institution $a$; display $\name(a)$. This panel is the outgoing volume (eq.~\ref{eq:out}) shown as a ranking:
+\begin{equation}
+\mathrm{Referrals}(a) \equiv \mathrm{Out}(a) = \sum_{b}\sum_{m} \Coord(a,b,m) \label{eq:topref}
+\end{equation}
+Rank institutions by $\mathrm{Referrals}(a)$ descending; label each with $\name(a)$.
+
+\subsection{Leading causes of referral (top 5)}\label{sec:causes}
+\textit{Variables:} cause code $x$ taken from \fhir{ServiceRequest.category} (Reason-for-Referral value set, Sec.~\ref{sec:fhir}); $\mathrm{N}(a,m,x)=$ number of referrals from institution $a$ in month $m$ coded with cause $x$.
+\begin{equation}
+\mathrm{Cases}(x) = \sum_{a}\sum_{m} \mathrm{N}(a,m,x) \label{eq:cases}
+\end{equation}
+Keep the five largest $\mathrm{Cases}(x)$; display each with its value-set \emph{Display} term.
+
+\subsection{Top reasons for declined / unsuccessful}\label{sec:declined}
+\textit{Variables:} the declined event is $\Unsucc(a,b,m)$ (i.e.\ \fhir{Task.status}=Referred/Forwarded, the ``Action Point: Referred (Forwarded)''); $r$ = a decline reason.
+\begin{equation}
+\mathrm{Count}(r) = \sum_{a,b,m} \bigl[\,\text{declined referrals with reason } r\,\bigr] \label{eq:count}
+\end{equation}
+The \emph{occurrence} of a decline is sourced from \fhir{Task.status} (REF-18). The \emph{reason} $r$ (no bed, no specialist, financial, refused) requires a coded \fhir{Task.statusReason}; this field is not part of the v0.1 mapping, so until it is added the breakdown by $r$ cannot be populated from FHIR (Sec.~\ref{sec:fhir}).
+
+\subsection{Report submission status --- hospitals (by month-end)}\label{sec:submission}
+\textit{Variables:} $\Encoded(o,m)$. A status lookup, not a sum.
+\begin{align}
+\mathrm{Cell}(o,m) &= \Encoded(o,m)\ \in\ \{\text{Yes (green)},\ \text{Not complete (amber)},\ \text{No (red)}\} \label{eq:cell}\\[2pt]
+\mathrm{rate}(m) &= \frac{\bigl|\{\,o\in H : \Encoded(o,m)=\text{Yes}\,\}\bigr|}{|H|}\times 100 \label{eq:ratem}
+\end{align}
+The column is dated to the last calendar day of month $m$; the monthly rates feed the Report submission rate KPI.
+
+\section{FHIR element mapping (R4)}\label{sec:fhir}
+Every variable maps to a FHIR element from the \emph{[FINAL] FHIR Element (R4)} column. Institutions are keyed by \fhir{Organization.identifier(NHFR).value} and displayed by \fhir{Organization.name}; a referral is a \fhir{ServiceRequest}; its outcome is on the linked \fhir{Task}; the month comes from \fhir{ServiceRequest.authoredOn}. SNOMED CT value sets are listed beneath their element. The single row with no clinical element is shaded red.
+
+\begingroup
+\footnotesize
+\setlength{\tabcolsep}{5pt}
+\begin{longtable}{>{\raggedright\arraybackslash}p{2.5cm} >{\raggedright\arraybackslash}p{3.7cm} >{\raggedright\arraybackslash}p{6.0cm} >{\raggedright\arraybackslash}p{1.7cm}}
+\rowcolor{headbg}
+\textbf{\color{white}Equation term} & \textbf{\color{white}What it represents} & \textbf{\color{white}FHIR Element (R4)} & \textbf{\color{white}Source ID}\\
+\endhead
+\texttt{Coord(a,b,m)} & A coordinated referral --- the referral event itself (one per ServiceRequest). & \texttt{ServiceRequest} $\cdot$ \texttt{ServiceRequest.authoredOn} & REF-13\\
+\texttt{Succ(a,b,m)} & Referral successfully received by the destination. & \texttt{Task.status} (= Received) & REF-17\\
+\texttt{Unsucc(a,b,m)} & Referral not received --- forwarded onward / declined. & \texttt{Task.status} (= Referred / Forwarded) & REF-18\\
+\texttt{r / Remarks} & Reason a referral was declined --- recorded via Action Point: Referred (Forwarded). & \texttt{Task.status} (= Referred / Forwarded) & REF-18\\
+$a$ (sending inst.) & Initiating / referring institution. & key: \texttt{Organization.identifier(NHFR).value} \newline display: \texttt{Organization.name} \newline via \texttt{ServiceRequest.requester} & REF-5, REF-6\\
+$b$ (receiving inst.) & Destination institution. & key: \texttt{Organization.identifier(NHFR).value} \newline display: \texttt{Organization.name} & REF-10, REF-11\\
+$a\!\to\! b$ (interaction) & Directed institution pair; counted per direction. & ordered pair of \texttt{Organization.identifier(NHFR).value}; displayed as \texttt{Organization.name}$\to$\texttt{Organization.name} & REF-6 $\to$ REF-11\\
+$m$ (month) & Reporting month, bucketed from the referral date. & \texttt{ServiceRequest.authoredOn} & REF-13\\
+\texttt{x / N(a,m,x)} & Clinical reason / service type behind the referral (leading cause). & \texttt{ServiceRequest.category} $\cdot$ \texttt{Condition.code} \newline {\color{vscol}\scriptsize Reason for Referral (SNOMED CT): 11429006 Consultation $\cdot$ 165197003 Diagnostics $\cdot$ 71388002 Procedure $\cdot$ 3457005 Others} & REF-16, REF-41\\
+Referral type & Type of referral on the request (separate axis from $a\!\to\! b$). & \texttt{ServiceRequest.priority} \newline {\color{vscol}\scriptsize Referral Category (SNOMED CT): 73770003 Emergency $\cdot$ 440655000 Outpatient} & REF-14\\
+\rowcolor{redbg}
+{\color{flagred}\texttt{Encoded(o,m)}} & {\color{flagred}Whether the institution's report was submitted / signed (reporting metadata, not clinical).} & {\color{flagred}no clinical element --- proxy only: \texttt{Provenance.recorded}} & {\color{flagred}REF-3}\\
+\texttt{rates, $Q_k$, Cases, Edge, In, Out, Referrals} & Aggregates and percentages built from the rows. & derived --- computed from the elements above; no direct FHIR element & ---\\
+\end{longtable}
+\endgroup
+
+\noindent{\color{flagred}\textbf{Stat without a FHIR basis (red row above):}} the Report Submission Rate / submission-status matrix (\texttt{Encoded}) cannot be sourced from the \emph{[FINAL] FHIR Element (R4)} column --- submission status is reporting metadata that must be tracked above the referral resources, not within them.
+
+\medskip
+\noindent\textit{\color{black!70}Note: ``Referral type'' (REF-14 $\to$ \texttt{ServiceRequest.priority}) records Emergency / Outpatient and is a different axis from the directed interaction $a\!\to\! b$. The declined-referral reason (Remarks) is taken from the Action Point: Referred (Forwarded) status (REF-18); its sub-reason granularity needs \texttt{Task.statusReason}, which is outside v0.1. Only the report-submission status (Encoded) has no clinical element.}
+
+\section{How to build each panel (for an automated builder)}
+Given a set of \fhir{ServiceRequest} resources (each with a linked \fhir{Task} via \fhir{Task.focus}$=$ the ServiceRequest), and resolvable \fhir{Organization} references:
+\begin{enumerate}
+  \item \textbf{Normalise each referral} to a tuple $\langle a,b,m,\text{status},\text{cause},\text{type}\rangle$ where $a=\key(\text{requester Organization})$, $b=\key(\text{receiving Organization})$, $m=\text{month}(\fhir{ServiceRequest.authoredOn})$, $\text{status}=\fhir{Task.status}$, $\text{cause}=\fhir{ServiceRequest.category}$ code, $\text{type}=\fhir{ServiceRequest.priority}$ code.
+  \item \textbf{KPI cards:} count tuples for Coordinated; rate $=$ Received$/$total; declined $=$ Forwarded$/$total (eqs.~\ref{eq:coord}--\ref{eq:decl}).
+  \item \textbf{By quarter:} group by quarter of $m$ (eq.~\ref{eq:quarter}).
+  \item \textbf{Referral directionality:} group by $(a,b)$, count per group (eq.~\ref{eq:edge}); label each with $\name(a)\!\to\!\name(b)$ resolved from the NHFR id.
+  \item \textbf{Outgoing referrals:} group by sender $a$ only, count (eq.~\ref{eq:out}); label with $\name(a)$. (\emph{Top referring facilities} is this ranked descending.)
+  \item \textbf{Incoming referrals:} group by receiver $b$ only, count (eq.~\ref{eq:in}); label with $\name(b)$.
+  \item \textbf{Leading causes:} group by cause code, count, keep top 5 (eq.~\ref{eq:cases}); label with the SNOMED \emph{Display}.
+  \item \textbf{Declined reasons:} filter status $=$ Forwarded; group by \fhir{Task.statusReason} \emph{if present} (eq.~\ref{eq:count}); otherwise show total declined only.
+  \item \textbf{Submission matrix \& rate:} from the Monitoring stream, not FHIR --- one cell per $(o,m)$ (eqs.~\ref{eq:cell}--\ref{eq:ratem}).
+\end{enumerate}
+
+\section{Structured field map (machine-readable)}
+\begingroup
+\footnotesize
+\begin{verbatim}
+{
+  "organization": { "key": "Organization.identifier(NHFR).value",
+                    "display": "Organization.name" },
+  "sender_a":     { "source": "ServiceRequest.requester -> Organization",
+                    "ref": ["REF-5","REF-6"] },
+  "receiver_b":   { "source": "receiving Organization (performer / Task.owner)",
+                    "ref": ["REF-10","REF-11"] },
+  "interaction":  { "definition": "ordered pair (sender_a -> receiver_b), counted per direction",
+                    "label": "name(a) -> name(b)", "panel": "Referral directionality" },
+  "outgoing":     { "definition": "Out(o) = count where sender = o (sum over receivers, months)",
+                    "group_by": "ServiceRequest.requester Organization NHFR id" },
+  "incoming":     { "definition": "In(o)  = count where receiver = o (sum over senders, months)",
+                    "group_by": "receiving Organization (Task.owner) NHFR id" },
+  "month_m":      { "source": "ServiceRequest.authoredOn", "bucket": "calendar month",
+                    "ref": ["REF-13"] },
+  "coord":        { "definition": "count ServiceRequest where requester=a, receiver=b, month=m" },
+  "succ":         { "source": "Task.status = received", "ref": ["REF-17"] },
+  "unsucc":       { "source": "Task.status = referred/forwarded", "ref": ["REF-18"] },
+  "cause_x":      { "source": "ServiceRequest.category", "ref": ["REF-16"],
+                    "valueset_snomed": { "11429006":"Consultation", "165197003":"Diagnostics",
+                                         "71388002":"Procedure", "3457005":"Others" } },
+  "referral_type":{ "source": "ServiceRequest.priority", "ref": ["REF-14"],
+                    "valueset_snomed": { "73770003":"Emergency", "440655000":"Outpatient" } },
+  "encoded":      { "fhir": null,
+                    "note": "reporting metadata; no FHIR element; proxy Provenance.recorded (REF-3)" }
+}
+\end{verbatim}
+\endgroup
+
+\end{document}
