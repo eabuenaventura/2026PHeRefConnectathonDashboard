@@ -1,30 +1,17 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-
-export default function RefreshButton() {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [spinning, setSpinning] = useState(false);
-
-  function refresh() {
-    setSpinning(true);
-    startTransition(() => {
-      // Re-runs the server component and re-fetches from the FHIR server.
-      router.refresh();
-    });
-    // Clear the spin shortly after the transition settles.
-    window.setTimeout(() => setSpinning(false), 600);
-  }
-
-  const busy = isPending || spinning;
-
+export default function RefreshButton({
+  onClick,
+  busy,
+}: {
+  onClick: () => void;
+  busy: boolean;
+}) {
   return (
     <button
       type="button"
       className="refresh-btn"
-      onClick={refresh}
+      onClick={onClick}
       disabled={busy}
       aria-label="Refresh data"
     >

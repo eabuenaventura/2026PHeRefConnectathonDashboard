@@ -1,4 +1,8 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import { getDashboardData, DashboardData } from "@/lib/metrics";
+import { baseUrl } from "@/lib/fhir";
 import {
   QuarterBars,
   CausesBars,
@@ -7,10 +11,6 @@ import {
   DeclinedBars,
 } from "@/components/Charts";
 import RefreshButton from "@/components/RefreshButton";
-
-// Always render fresh against the live FHIR server.
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 function KpiCard({
   label,
@@ -125,24 +125,29 @@ function SubmissionMatrix({
   );
 }
 
-async function Dashboard() {
-  let data: DashboardData;
-  try {
-    data = await getDashboardData();
-  } catch (err) {
-    return (
-      <div className="wrap">
-        <div className="banner">
-          Could not load data from the FHIR server (
-          <code>{process.env.FHIR_BASE_URL || "FHIR_BASE_URL not set"}</code>).
-          <br />
-          {String(err instanceof Error ? err.message : err)}
-        </div>
-      </div>
-    );
-  }
+export default function Page() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const t = data.totals;
+  // Fetch + aggregate entirely in the browser (direct calls to the FHIR server).
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await getDashboardData());
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const source = baseUrl();
   const fmt = (n: number) => n.toLocaleString();
   const pct = (n: number) => `${n.toFixed(n >= 10 ? 0 : 1)}`;
 
@@ -152,19 +157,60 @@ async function Dashboard() {
         <div>
           <h1>Aklan Referral Monitoring Dashboard</h1>
           <div className="sub">
-            Provincial Health Office · PHeRef Connectathon · CY {data.reportingYear} · live FHIR R4
+            Provincial Health Office · PHeRef Connectathon ·{" "}
+            {data ? `CY ${data.reportingYear} · ` : ""}live FHIR R4 (client-side)
           </div>
         </div>
         <div className="header-right">
-          <RefreshButton />
+          <RefreshButton onClick={load} busy={loading} />
           <div className="meta">
-            Source: {data.fhirBase}
+            Source: {source}
             <br />
-            Updated {new Date(data.generatedAt).toLocaleString()}
+            {data
+              ? `Updated ${new Date(data.generatedAt).toLocaleString()}`
+              : loading
+                ? "Loading…"
+                : ""}
           </div>
         </div>
       </div>
 
+      {error ? (
+        <div className="banner">
+          Could not load data from the FHIR server (<code>{source}</code>).
+          <br />
+          {error}
+          <br />
+          <span style={{ fontSize: 12 }}>
+            If this is a CORS error, the FHIR server must allow cross-origin requests from
+            this site&apos;s domain, or the data must be fetched server-side instead.
+          </span>
+        </div>
+      ) : null}
+
+      {!data ? (
+        <div className="card" style={{ textAlign: "center", padding: "48px 18px" }}>
+          {loading ? "Loading referral data…" : "No data."}
+        </div>
+      ) : (
+        <Panels data={data} fmt={fmt} pct={pct} />
+      )}
+    </div>
+  );
+}
+
+function Panels({
+  data,
+  fmt,
+  pct,
+}: {
+  data: DashboardData;
+  fmt: (n: number) => string;
+  pct: (n: number) => string;
+}) {
+  const t = data.totals;
+  return (
+    <>
       {/* Row 1 — four KPI cards */}
       <div className="grid row-kpi">
         <KpiCard
@@ -281,10 +327,6 @@ async function Dashboard() {
           .join(", ") || "none"}
         .
       </div>
-    </div>
+    </>
   );
-}
-
-export default function Page() {
-  return <Dashboard />;
 }

@@ -26,7 +26,10 @@ Every panel maps directly to an equation in the `.tex` spec:
 
 ## How the FHIR data is read
 
-Server-side only (no browser CORS), with pagination over Bundle `next` links:
+Fetched **directly from the browser** (client-side), with pagination over Bundle
+`next` links. The FHIR server must allow cross-origin (CORS) requests from the
+site's domain — `cdr.pheref.fhirlab.net` does. Nothing is proxied through the
+Next.js/Vercel server.
 
 - A **referral** is a `ServiceRequest`; its **outcome** is on the linked `Task`
   (via `Task.focus`); the **month** comes from `ServiceRequest.authoredOn`.
@@ -58,55 +61,62 @@ originated referral activity (`ServiceRequest.requester`) or signed a
 
 Set in `.env.local` (local) or Vercel project settings:
 
+Because data is fetched in the browser, both variables must use the
+`NEXT_PUBLIC_` prefix (Next.js only exposes those to the client). They are
+inlined at build time, so a change requires a rebuild/redeploy.
+
 | Variable | Purpose |
 | --- | --- |
-| `FHIR_BASE_URL` | FHIR R4 base URL. Default: `https://cdr.pheref.fhirlab.net/fhir` |
-| `REPORTING_YEAR` | Calendar year for the submission matrix. Blank = auto-detect busiest year from the data. |
+| `NEXT_PUBLIC_FHIR_BASE_URL` | FHIR R4 base URL. Default: `https://cdr.pheref.fhirlab.net/fhir` |
+| `NEXT_PUBLIC_REPORTING_YEAR` | Calendar year for the submission matrix. Blank = auto-detect busiest year from the data. |
 
 ## Run locally
 
 ```bash
 npm install
-cp .env.example .env.local   # edit FHIR_BASE_URL if needed
+cp .env.example .env.local   # edit NEXT_PUBLIC_FHIR_BASE_URL if needed
 npm run dev                  # http://localhost:3000
 ```
 
-> Note: the dev/build machine must be able to reach `FHIR_BASE_URL`. If it
-> can't, the page shows a "Could not load data" banner instead of crashing.
+> Note: your **browser** must be able to reach the FHIR server, and that server
+> must allow CORS. If a request fails, the page shows a "Could not load data"
+> banner (with a CORS hint) instead of crashing.
 
 ## Deploy to Vercel
 
 1. Push this folder to a Git repo (GitHub/GitLab/Bitbucket).
 2. In Vercel: **New Project → Import** the repo. Framework auto-detects as
    Next.js — no build settings needed.
-3. Add the environment variable `FHIR_BASE_URL` (and optionally
-   `REPORTING_YEAR`) under **Settings → Environment Variables**.
+3. Add the environment variable `NEXT_PUBLIC_FHIR_BASE_URL` (and optionally
+   `NEXT_PUBLIC_REPORTING_YEAR`) under **Settings → Environment Variables**.
 4. **Deploy.**
 
 Or from the CLI:
 
 ```bash
 npm i -g vercel
-vercel            # follow prompts
+vercel env add NEXT_PUBLIC_FHIR_BASE_URL   # paste the URL when prompted
 vercel --prod
 ```
 
-The dashboard page is server-rendered on demand (`dynamic = "force-dynamic"`),
-so each load reflects the current state of the FHIR server. A **Refresh** button
-in the header re-fetches live (`router.refresh()`) without a full page reload.
+The page renders in the browser and fetches FHIR data client-side, so each visit
+(and the header **Refresh** button) reflects the current state of the FHIR
+server. Because `NEXT_PUBLIC_` values are baked in at build time, changing the
+URL means redeploying.
 
 ## Project structure
 
 ```
 app/
   layout.tsx        root layout + metadata
-  page.tsx          server component: fetch → compute → render all panels
+  page.tsx          client component: browser fetch → compute → render panels
   globals.css       mock-up styling (navy cards, traffic-light matrix)
 lib/
-  fhir.ts           typed FHIR client + paginated fetchAll()
+  fhir.ts           typed FHIR client + paginated fetchAll() (runs in browser)
   metrics.ts        reference resolution + all panel aggregations (the equations)
 components/
-  Charts.tsx        Recharts client components (bars)
+  Charts.tsx        Recharts chart components (bars)
+  RefreshButton.tsx header refresh control
 ```
 
 ## Adapting to another Connectathon server
