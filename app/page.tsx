@@ -233,10 +233,6 @@ export default function Page() {
           </div>
           <div>
             <h1>PH eReferral Connectathon Monitoring Dashboard</h1>
-            <div className="sub">
-              Provincial Health Office · PHeRef Connectathon ·{" "}
-              {data ? `CY ${data.reportingYear} · ` : ""}live FHIR R4 (client-side)
-            </div>
           </div>
         </div>
 
