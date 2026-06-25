@@ -79,9 +79,23 @@ export function baseUrl(): string {
   return raw.replace(/\/+$/, "");
 }
 
+// HAPI MDM marks merged "golden"/master records with these meta tags. They are
+// synthetic aggregates and would double-count, so we drop them everywhere.
+//   http://hapifhir.io/fhir/NamingSystem/mdm-record-status  -> GOLDEN_RECORD
+//   https://hapifhir.org/NamingSystem/managing-mdm-system   -> HAPI-MDM
+const MDM_GOLDEN_RE = /golden[_\s-]?record|hapi-mdm/i;
+
+export function isGoldenRecord(resource: unknown): boolean {
+  const meta = (resource as { meta?: { tag?: Coding[]; security?: Coding[] } })?.meta;
+  if (!meta) return false;
+  const tags = [...(meta.tag || []), ...(meta.security || [])];
+  return tags.some((t) => MDM_GOLDEN_RE.test(`${t?.code || ""} ${t?.display || ""}`));
+}
+
 /**
  * Fetch every resource of a type, following Bundle `next` links.
  * Runs in the browser (client-side); the FHIR server must allow CORS.
+ * MDM golden/master records are filtered out (see isGoldenRecord).
  */
 export async function fetchAll<T>(
   type: string,
@@ -104,7 +118,7 @@ export async function fetchAll<T>(
     }
     const bundle = (await res.json()) as Bundle<T>;
     (bundle.entry || []).forEach((e) => {
-      if (e && e.resource) all.push(e.resource);
+      if (e && e.resource && !isGoldenRecord(e.resource)) all.push(e.resource);
     });
     const next = (bundle.link || []).find((l) => l.relation === "next");
     // Normalise next links to https to avoid mixed-content / proxy issues.
