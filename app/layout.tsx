@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Aklan Referral Monitoring Dashboard",
+  title: "PH eReferral Connectathon Monitoring Dashboard",
   description:
     "PHeRef Connectathon — referral monitoring indicators sourced live from FHIR R4.",
   icons: { icon: "/icon.svg" },

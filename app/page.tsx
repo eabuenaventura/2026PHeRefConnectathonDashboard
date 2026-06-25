@@ -232,11 +232,7 @@ export default function Page() {
             <img className="logo" src="/nthc-seal.png" alt="National Telehealth Center" width={44} height={44} />
           </div>
           <div>
-            <h1>Aklan Referral Monitoring Dashboard</h1>
-            <div className="sub">
-              Provincial Health Office · PHeRef Connectathon ·{" "}
-              {data ? `CY ${data.reportingYear} · ` : ""}live FHIR R4 (client-side)
-            </div>
+            <h1>PH eReferral Connectathon Monitoring Dashboard</h1>
           </div>
         </div>
 
@@ -286,7 +282,7 @@ function Panels({ data }: { data: DashboardData }) {
       {/* Row 1 — KPI cards */}
       <div className="grid row-kpi">
         <KpiCard
-          label="Coordinated Referrals"
+          label="Coordinated referrals"
           value={t.coordinated}
           caption="Total coordinated ServiceRequests"
           color="var(--accent)"
@@ -309,15 +305,6 @@ function Panels({ data }: { data: DashboardData }) {
           caption={`${fmt(t.declined)} declined · ${fmt(t.pending)} pending`}
           color="var(--red)"
           icon={Ico.x}
-        />
-        <KpiCard
-          label="Report Submission Rate"
-          value={t.submissionRate}
-          decimals={rateDecimals(t.submissionRate)}
-          unit="%"
-          caption="Avg. monthly hospital submissions (proxy)"
-          color="var(--amber)"
-          icon={Ico.doc}
         />
       </div>
 
@@ -381,7 +368,7 @@ function Panels({ data }: { data: DashboardData }) {
         </div>
       </div>
 
-      {/* Row 6 */}
+      {/* Row 6 — submission status matrix */}
       <div className="grid row-1">
         <div className="card">
           <h2>Report submission status — hospitals (by month-end) <span className="tag">proxy</span></h2>

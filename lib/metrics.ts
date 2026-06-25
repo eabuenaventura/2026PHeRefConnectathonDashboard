@@ -25,6 +25,7 @@ import {
   Provenance,
   CodeableConcept,
 } from "./fhir";
+import { canonicalize, RawInstitution } from "./dedup";
 
 // ----- configurable mappings -------------------------------------------------
 
@@ -92,6 +93,7 @@ export interface MatrixRow {
   name: string;
   fullName: string;
   cells: ("Yes" | "Not complete" | "No")[]; // 12 entries, Jan..Dec
+  sources: string[]; // raw provider names absorbed into this canonical row
 }
 
 export interface DashboardData {
@@ -116,6 +118,20 @@ export interface DashboardData {
   declined: NameValue[]; // eq:count
   declinedReasonAvailable: boolean;
   matrix: { months: string[]; rows: MatrixRow[] }; // eq:cell
+  dedup: {
+    rawOrganizations: number; // raw Organization records before dedup
+    canonicalInstitutions: number; // after canonicalization (resolver image)
+    duplicatesAbsorbed: number; // rawOrganizations - canonicalInstitutions
+    mergedGroups: number; // canonical institutions that absorbed >1 raw record
+    selfPairsDropped: number; // referrals whose endpoints resolve to the same canonical
+    threshold: number; // similarity threshold tau
+    mergeLog: {
+      name: string;
+      key: string;
+      keyIsSurrogate: boolean;
+      sources: string[];
+    }[];
+  };
   diagnostics: {
     serviceRequests: number;
     tasks: number;
@@ -142,6 +158,27 @@ function conceptLabel(c?: CodeableConcept): string | null {
   return c.text || c.coding?.find((x) => x.display)?.display || c.coding?.[0]?.code || null;
 }
 
+// Reason-for-Referral value set (SNOMED CT): canonical display per code, so the
+// "Leading causes" panel shows only these clean labels regardless of how the
+// source system spelled the display (e.g. "Diagnostic Assessment" -> "Diagnostics").
+const REASON_DISPLAY: Record<string, string> = {
+  "11429006": "Consultation",
+  "165197003": "Diagnostics",
+  "71388002": "Procedure",
+  "3457005": "Others",
+};
+
+// Leading causes use ONLY the display of ServiceRequest.reasonCode.
+// Prefer the canonical value-set display (by code); otherwise the coding's own
+// display. ServiceRequests without a coded reason display are not counted.
+function reasonDisplay(reason?: CodeableConcept): string | null {
+  const codings = reason?.coding || [];
+  for (const c of codings) {
+    if (c.code && REASON_DISPLAY[c.code]) return REASON_DISPLAY[c.code];
+  }
+  return codings.find((c) => c.display)?.display || null;
+}
+
 // ----- main ------------------------------------------------------------------
 
 export async function getDashboardData(): Promise<DashboardData> {
@@ -155,6 +192,28 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const orgById = new Map<string, Organization>();
   orgs.forEach((o) => orgById.set(o.id, o));
+
+  // ----- institution deduplication (addendum §dedup) -------------------------
+  // Build the canonical institution set and the resolver rho once, as a
+  // pre-processing stage over the raw Organization records, before any counting.
+  function nhfrOf(o: Organization): string | null {
+    const ids = o.identifier || [];
+    const nhfr = ids.find((x) => NHFR_RE.test(x.system || ""));
+    return nhfr?.value?.trim() || null;
+  }
+  const rawInstitutions: RawInstitution[] = orgs.map((o) => ({
+    id: o.id,
+    name: o.name?.trim() || `Org ${o.id}`,
+    nhfrId: nhfrOf(o),
+  }));
+  const dedup = canonicalize(rawInstitutions);
+  // rho: raw Organization.id -> canonical institution id. Records that the
+  // canonicaliser never saw (shouldn't happen) resolve to themselves.
+  function rho(orgId: string | null): string | null {
+    if (!orgId) return null;
+    return dedup.resolver.get(orgId) || orgId;
+  }
+
   const roleById = new Map<string, PractitionerRole>();
   roles.forEach((p) => roleById.set(p.id, p));
   const practitionerToOrg = new Map<string, string>();
@@ -164,8 +223,11 @@ export async function getDashboardData(): Promise<DashboardData> {
     if (pr && og) practitionerToOrg.set(pr.id, og.id);
   });
 
-  // Resolve any reference (Organization | PractitionerRole | Practitioner) to an Organization id.
-  function resolveOrgId(ref?: { reference?: string }): string | null {
+  // Resolve any reference (Organization | PractitionerRole | Practitioner) to a
+  // RAW Organization id, then collapse it onto its canonical institution via rho.
+  // Every institution reference in the spec — sender a, receiver b, submitting
+  // hospital o — is replaced by its resolution rho(.) (addendum §defs, change set 2).
+  function resolveRawOrgId(ref?: { reference?: string }): string | null {
     const r = refId(ref);
     if (!r) return null;
     if (r.type === "Organization") return r.id;
@@ -178,27 +240,37 @@ export async function getDashboardData(): Promise<DashboardData> {
     }
     return null;
   }
+  function resolveOrgId(ref?: { reference?: string }): string | null {
+    return rho(resolveRawOrgId(ref));
+  }
 
+  // name(o_hat) / key(o_hat): canonical display name and key for a CANONICAL id.
   function orgName(id: string | null): string {
     if (!id) return "Unknown";
+    const c = dedup.byId.get(id);
+    if (c) return c.name;
     return orgById.get(id)?.name?.trim() || `Org ${id}`;
   }
-  // key(o) = Organization.identifier(NHFR).value, fallback to any identifier, then id.
   function orgKey(id: string | null): string {
     if (!id) return "—";
+    const c = dedup.byId.get(id);
+    if (c) return c.key;
     const o = orgById.get(id);
     if (!o) return id;
     const ids = o.identifier || [];
     const nhfr = ids.find((x) => NHFR_RE.test(x.system || ""));
     return nhfr?.value || ids[0]?.value || o.id;
   }
+  // A canonical institution counts as a hospital if any absorbed raw record looks
+  // like one (by name or Organization.type).
   function isHospital(id: string | null): boolean {
     if (!id) return false;
-    const o = orgById.get(id);
-    const typeText = (o?.type || [])
-      .map((t) => conceptLabel(t) || "")
-      .join(" ");
-    return HOSPITAL_RE.test(o?.name || "") || /hospital/i.test(typeText);
+    const memberIds = dedup.byId.get(id)?.memberIds || [id];
+    return memberIds.some((mid) => {
+      const o = orgById.get(mid);
+      const typeText = (o?.type || []).map((t) => conceptLabel(t) || "").join(" ");
+      return HOSPITAL_RE.test(o?.name || "") || /hospital/i.test(typeText);
+    });
   }
 
   // Link each ServiceRequest to its Task via Task.focus.
@@ -214,7 +286,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     b: string | null;
     month: string | null; // YYYY-MM
     outcome: "success" | "declined" | "pending";
-    cause: string;
+    cause: string | null;
   }
   const tuples: Tuple[] = [];
   const taskStatusCounts: Record<string, number> = {};
@@ -244,11 +316,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     if (SUCCESS_STATUS.has(status)) outcome = "success";
     else if (DECLINED_STATUS.has(status)) outcome = "declined";
 
-    const cause =
-      conceptLabel(s.reasonCode?.[0]) ||
-      conceptLabel(s.category?.[0]) ||
-      conceptLabel(s.code) ||
-      "Unspecified";
+    const cause = reasonDisplay(s.reasonCode?.[0]);
 
     tuples.push({ a, b, month, outcome, cause });
   });
@@ -308,7 +376,15 @@ export async function getDashboardData(): Promise<DashboardData> {
     return row;
   }
 
+  // Self-pairs (addendum §collate): a referral whose two endpoints resolve to the
+  // SAME canonical institution is a merge artifact from duplicate provider records.
+  // Exclude o_hat -> o_hat from directionality, Incoming and Outgoing; count & log.
+  let selfPairsDropped = 0;
   tuples.forEach((t) => {
+    if (t.a && t.b && t.a === t.b) {
+      selfPairsDropped += 1;
+      return;
+    }
     if (t.a && t.b) {
       const k = `${t.a}\u0001${t.b}`;
       edgeMap.set(k, (edgeMap.get(k) || 0) + 1);
@@ -343,7 +419,9 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   // ----- leading causes (eq:cases, top 5) ------------------------------------
   const causeMap = new Map<string, number>();
-  tuples.forEach((t) => causeMap.set(t.cause, (causeMap.get(t.cause) || 0) + 1));
+  tuples.forEach((t) => {
+    if (t.cause) causeMap.set(t.cause, (causeMap.get(t.cause) || 0) + 1);
+  });
   const causes: NameValue[] = Array.from(causeMap.entries())
     .map(([name, value]) => ({ name, value }))
     .sort((x, y) => y.value - x.value)
@@ -410,10 +488,12 @@ export async function getDashboardData(): Promise<DashboardData> {
       return (yes ? "Yes" : "No") as "Yes" | "No";
     });
     const full = orgName(id);
+    const sources = dedup.byId.get(id)?.sourceNames || [];
     return {
       name: abbreviate(full),
       fullName: full,
       cells,
+      sources,
     };
   });
 
@@ -454,6 +534,15 @@ export async function getDashboardData(): Promise<DashboardData> {
     declined,
     declinedReasonAvailable,
     matrix: { months: MONTH_LABELS, rows: matrixRows },
+    dedup: {
+      rawOrganizations: orgs.length,
+      canonicalInstitutions: dedup.canonicals.length,
+      duplicatesAbsorbed: orgs.length - dedup.canonicals.length,
+      mergedGroups: dedup.mergeLog.length,
+      selfPairsDropped,
+      threshold: 0.8,
+      mergeLog: dedup.mergeLog,
+    },
     diagnostics: {
       serviceRequests: srs.length,
       tasks: tasks.length,

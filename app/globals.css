@@ -243,7 +243,7 @@ body {
   display: grid;
   gap: 18px;
 }
-.row-kpi { grid-template-columns: repeat(4, 1fr); }
+.row-kpi { grid-template-columns: repeat(3, 1fr); }
 .row-2 { grid-template-columns: 1fr 1fr; }
 .row-1 { grid-template-columns: 1fr; }
 .grid + .grid { margin-top: 18px; }
@@ -382,6 +382,8 @@ body {
   overflow: hidden;
 }
 .edge-row .bar-fill {
+  display: block;
+  min-width: 6px;
   background: linear-gradient(90deg, var(--accent), var(--quarter));
   height: 100%;
   border-radius: 7px;
@@ -484,6 +486,68 @@ body {
 
 @media (max-width: 560px) {
   .facility-key { grid-template-columns: 1fr; }
+}
+.facility-key .absorbed { color: var(--faint); font-style: italic; }
+
+/* ===== Deduplication panel ===== */
+.dedup-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.dedup-stat {
+  background: var(--chip);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dedup-stat .num {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.dedup-stat .lbl { font-size: 11.5px; color: var(--muted); }
+
+.merge-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.merge-row {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.merge-head { font-size: 13px; color: var(--ink); margin-bottom: 7px; }
+.merge-head .keytag {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--hospital);
+  background: color-mix(in srgb, var(--hospital) 12%, var(--card));
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+.merge-head .keytag.surrogate { color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--card)); }
+.merge-sources { display: flex; flex-wrap: wrap; gap: 6px; }
+.merge-sources .chip {
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--chip);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+@media (max-width: 720px) {
+  .dedup-stats { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ===== Banner ===== */
